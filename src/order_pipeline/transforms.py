@@ -2,11 +2,9 @@
 
 from pyspark.sql import Column, DataFrame, Row, Window
 from pyspark.sql import functions as F
-
 from pyspark.sql.types import DecimalType
 
 RAW_COLUMNS = ("order_id", "customer_id", "order_date", "amount", "status")
-
 COMPLETED = "completed"  # revenue needs completed orders
 KNOWN_STATUSES = ("completed", "pending", "cancelled")  # all recognized order statuses
 DATE_FORMAT = "yyyy-MM-dd"  # matching csv format
@@ -36,6 +34,8 @@ ORDER_DETAILS = ("customer_id", "order_date", "amount", "status")
 
 
 # replaced original prepare_orders function because it was trying to do 3 things at once: type casting, date conversion, and deduplication
+
+
 def empty_to_null(name: str) -> Column:
     """an empty value becomes NULL"""
     return F.nullif(F.trim(F.col(name)), F.lit(""))
@@ -43,7 +43,6 @@ def empty_to_null(name: str) -> Column:
 
 def standardise_orders(raw: DataFrame) -> DataFrame:
     """same standard for every column to avoid bad input"""
-
     return raw.select(
         empty_to_null("order_id").alias("order_id"),
         empty_to_null("customer_id").alias("customer_id"),
@@ -57,9 +56,7 @@ def standardise_orders(raw: DataFrame) -> DataFrame:
 
 def dq_rules() -> dict[str, Column]:
     """establishing matching issues for each business rule with breaking conditions"""
-    versions = F.collect_set(F.struct(*ORDER_DETAILS)).over(
-        Window.partitionBy("order_id")
-    )
+    versions = F.collect_set(F.struct(*ORDER_DETAILS)).over(Window.partitionBy("order_id"))
 
     return {
         MISSING_ORDER_ID: F.col("order_id").isNull(),
@@ -126,7 +123,8 @@ def summarize(flagged: DataFrame) -> Row:
     valid_ids = F.count_distinct(F.when(valid, F.col("order_id")))
     counted_ids = F.count_distinct(F.when(valid & completed_order(), F.col("order_id")))
     known_status = F.coalesce(F.col("status").isin(*KNOWN_STATUSES), F.lit(False))
-    return flagged.agg(
+
+    summary = flagged.agg(
         F.count("*").alias("rows_in"),
         F.count_if(~valid).alias("rejected"),
         (F.count_if(valid) - valid_ids).alias("exact_duplicates"),
@@ -136,3 +134,6 @@ def summarize(flagged: DataFrame) -> Row:
         *[F.count_if(F.col("status") == s).alias(s) for s in KNOWN_STATUSES],
         F.count_if(~known_status).alias("unknown_status"),
     ).first()
+
+    assert summary is not None
+    return summary

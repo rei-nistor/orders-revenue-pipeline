@@ -7,12 +7,12 @@ from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql.types import StringType, StructField, StructType
 
 from order_pipeline.transforms import (
-    daily_revenue,
     DQ_RULES,
-    eligible_orders,
-    flag_dq_issues,
     KNOWN_STATUSES,
     RAW_COLUMNS,
+    daily_revenue,
+    eligible_orders,
+    flag_dq_issues,
     rejected_orders,
     standardise_orders,
     summarize,
@@ -53,24 +53,23 @@ def log_summary(summary: Row) -> None:
         summary["not_completed"],
         summary["counted"],
     )
+
     logger.info(
         "Rejected rows by DQ issue: %s",
         ", ".join(f"{r}={summary[r]}" for r in DQ_RULES),
     )
+
     logger.info("Statuses: %s", ", ".join(f"{s}={summary[s]}" for s in KNOWN_STATUSES))
     if summary["unknown_status"]:
         logger.warning("%s rows have an unknown status", summary["unknown_status"])
 
 
-def run(
-    spark: SparkSession, input_path: Path, output_dir: Path
-) -> tuple[DataFrame, DataFrame]:
+def run(spark: SparkSession, input_path: Path, output_dir: Path) -> tuple[DataFrame, DataFrame]:
     """Build report and quarantine"""
     flagged = flag_dq_issues(standardise_orders(read_orders(spark, input_path)))
     flagged.cache()
     report = daily_revenue(eligible_orders(flagged))
     rejected = rejected_orders(flagged)
-
     write_parquet(report, output_dir / "daily_revenue")
     write_parquet(rejected, output_dir / "rejected_orders")
     log_summary(summarize(flagged))
@@ -80,15 +79,15 @@ def run(
 
 def main() -> None:
     # configured logging
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     spark = (
         SparkSession.builder.master("local[2]")
         .appName("associate-order-assignment")
         .config("spark.sql.shuffle.partitions", "2")
         .getOrCreate()
     )
+
     spark.sparkContext.setLogLevel("ERROR")
     try:
         run(spark, ROOT / "data" / "orders.csv", ROOT / "output")
