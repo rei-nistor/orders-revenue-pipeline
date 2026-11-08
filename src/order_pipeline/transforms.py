@@ -92,4 +92,16 @@ def daily_revenue(orders: DataFrame) -> DataFrame:
             F.count("order_id").alias("order_count"),
         )
         .orderBy("order_date")
-     
+    )
+
+
+def rejected_orders(flagged: DataFrame) -> DataFrame:
+    """Defining rejected orders as bad rows with dq issues."""
+    return flagged.filter(~valid_order()).select(
+        "order_id",
+        "customer_id",
+        "raw_order_date",
+        "raw_amount",
+        "status",
+        DQ_ISSUES,
+    )
