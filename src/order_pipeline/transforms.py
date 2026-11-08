@@ -1,11 +1,12 @@
 """Order transformations. Review correctness and test coverage."""
 
-from pyspark.sql import Column, DataFrame, Window
+from pyspark.sql import Column, DataFrame, Row, Window
 from pyspark.sql import functions as F
-
 from pyspark.sql.types import DecimalType
 
+RAW_COLUMNS = ("order_id", "customer_id", "order_date", "amount", "status")
 COMPLETED = "completed"  # revenue needs completed orders
+KNOWN_STATUSES = ("completed", "pending", "cancelled")  # all recognized order statuses
 DATE_FORMAT = "yyyy-MM-dd"  # matching csv format
 MONEY = DecimalType(14, 2)  # precision for monetary values
 DQ_ISSUES = "dq_issues"  # column for data quality issues from broken rules
@@ -18,11 +19,24 @@ INVALID_AMOUNT = "invalid_amount"
 NEGATIVE_AMOUNT = "negative_amount"
 CONFLICTING_ORDER_ID = "conflicting_order_id"
 
+# all rule names in one tuple for logging purposes
+DQ_RULES = (
+    MISSING_ORDER_ID,
+    MISSING_CUSTOMER_ID,
+    INVALID_ORDER_DATE,
+    INVALID_AMOUNT,
+    NEGATIVE_AMOUNT,
+    CONFLICTING_ORDER_ID,
+)
+
 # Defining an order
 ORDER_DETAILS = ("customer_id", "order_date", "amount", "status")
 
 
-# replaced original prepare_orders function because it was trying to do 3 things at once: type casting, date conversion, and deduplication
+# replaced original prepare_orders function because it was trying to do 3 things at once:
+# type casting, date conversion, and deduplication
+
+
 def empty_to_null(name: str) -> Column:
     """an empty value becomes NULL"""
     return F.nullif(F.trim(F.col(name)), F.lit(""))
@@ -30,7 +44,6 @@ def empty_to_null(name: str) -> Column:
 
 def standardise_orders(raw: DataFrame) -> DataFrame:
     """same standard for every column to avoid bad input"""
-
     return raw.select(
         empty_to_null("order_id").alias("order_id"),
         empty_to_null("customer_id").alias("customer_id"),
@@ -44,9 +57,7 @@ def standardise_orders(raw: DataFrame) -> DataFrame:
 
 def dq_rules() -> dict[str, Column]:
     """establishing matching issues for each business rule with breaking conditions"""
-    versions = F.collect_set(F.struct(*ORDER_DETAILS)).over(
-        Window.partitionBy("order_id")
-    )
+    versions = F.collect_set(F.struct(*ORDER_DETAILS)).over(Window.partitionBy("order_id"))
 
     return {
         MISSING_ORDER_ID: F.col("order_id").isNull(),
@@ -83,6 +94,18 @@ def eligible_orders(flagged: DataFrame) -> DataFrame:
     )
 
 
+def rejected_orders(flagged: DataFrame) -> DataFrame:
+    """Defining rejected orders as bad rows with dq issues."""
+    return flagged.filter(~valid_order()).select(
+        "order_id",
+        "customer_id",
+        "raw_order_date",
+        "raw_amount",
+        "status",
+        DQ_ISSUES,
+    )
+
+
 def daily_revenue(orders: DataFrame) -> DataFrame:
     """Calculate daily completed order revenue."""
     return (
@@ -95,13 +118,23 @@ def daily_revenue(orders: DataFrame) -> DataFrame:
     )
 
 
-def rejected_orders(flagged: DataFrame) -> DataFrame:
-    """Defining rejected orders as bad rows with dq issues."""
-    return flagged.filter(~valid_order()).select(
-        "order_id",
-        "customer_id",
-        "raw_order_date",
-        "raw_amount",
-        "status",
-        DQ_ISSUES,
-    )
+def summarize(flagged: DataFrame) -> Row:
+    """Summary of rejected and completed orders."""
+    valid = valid_order()
+    valid_ids = F.count_distinct(F.when(valid, F.col("order_id")))
+    counted_ids = F.count_distinct(F.when(valid & completed_order(), F.col("order_id")))
+    known_status = F.coalesce(F.col("status").isin(*KNOWN_STATUSES), F.lit(False))
+
+    summary = flagged.agg(
+        F.count("*").alias("rows_in"),
+        F.count_if(~valid).alias("rejected"),
+        (F.count_if(valid) - valid_ids).alias("exact_duplicates"),
+        (valid_ids - counted_ids).alias("not_completed"),
+        counted_ids.alias("counted"),
+        *[F.count_if(F.array_contains(DQ_ISSUES, r)).alias(r) for r in DQ_RULES],
+        *[F.count_if(F.col("status") == s).alias(s) for s in KNOWN_STATUSES],
+        F.count_if(~known_status).alias("unknown_status"),
+    ).first()
+
+    assert summary is not None
+    return summary
