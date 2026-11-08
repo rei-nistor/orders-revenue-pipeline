@@ -42,6 +42,33 @@ def standardise_orders(raw: DataFrame) -> DataFrame:
     )
 
 
+def dq_rules() -> dict[str, Column]:
+    """establishing matching issues for each business rule with breaking conditions"""
+    versions = F.collect_set(F.struct(*ORDER_DETAILS)).over(
+        Window.partitionBy("order_id")
+    )
+
+    return {
+        MISSING_ORDER_ID: F.col("order_id").isNull(),
+        MISSING_CUSTOMER_ID: F.col("customer_id").isNull(),
+        INVALID_ORDER_DATE: F.col("order_date").isNull(),  # bad dates became NULL
+        INVALID_AMOUNT: F.col("amount").isNull(),  # bad amounts became NULL
+        NEGATIVE_AMOUNT: F.col("amount") <= 0,  # negative amounts are invalid
+        CONFLICTING_ORDER_ID: F.col("order_id").isNotNull() & (F.size(versions) > 1),
+    }
+
+
+def flag_dq_issues(standardised: DataFrame) -> DataFrame:
+    """detect data quality issues for each row"""
+    issues = [F.when(broken, F.lit(name)) for name, broken in dq_rules().items()]
+    return standardised.withColumn(DQ_ISSUES, F.array_compact(F.array(*issues)))
+
+
+def valid_order() -> Column:
+    """A valid order is one that breaks no rule"""
+    return F.size(DQ_ISSUES) == 0
+
+
 def daily_revenue(orders: DataFrame) -> DataFrame:
     """Calculate daily completed-order revenue."""
     return (
