@@ -69,6 +69,20 @@ def valid_order() -> Column:
     return F.size(DQ_ISSUES) == 0
 
 
+def completed_order() -> Column:
+    """Status filter needed for completed orders"""
+    return F.col("status") == COMPLETED
+
+
+def eligible_orders(flagged: DataFrame) -> DataFrame:
+    """Valid and completed orders, each order_id appears once"""
+    return (
+        flagged.filter(valid_order() & completed_order())
+        .select("order_id", "order_date", "amount")
+        .dropDuplicates(["order_id"])
+    )
+
+
 def daily_revenue(orders: DataFrame) -> DataFrame:
     """Calculate daily completed-order revenue."""
     return (
