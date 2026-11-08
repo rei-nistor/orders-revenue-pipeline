@@ -1,8 +1,6 @@
 # Associate Data Engineer — PySpark Pipeline Challenge Solution
 
 **Author:** **Andrei Nistor**
-### Status: Task 1(done)
-
 
 ## Task 1: Run and inspect the existing pipeline.
 #### Started by checking the csv file in data folder and ran it by the business rules established in README. Here's my takeaways:
@@ -38,3 +36,15 @@
 - for precision monetary values should be decimal(14,2)
 - the test passes but proves nothing, its just fixtures for checking column names exist and need real tests to matc the business rules
 
+## Task 2: Fix incorrect transformations and explain the root causes
+#### Split the prepare_orders functions into small steps, to accomodate business rules:
+- standardise_orders, flag_dq_issues, eligible_orders,rejected_orders  
+#### Also refactored daily_revenue to get the correct revenue and order count per day
+
+**Result after the fix**
+- uv run python -m order_pipeline.pipeline worked and we got the output report which matches the expected answer from Task 1:
+    - 2026-10-01 -> 205.50, 2 orders
+    - 2026-10-02 -> 40.00, 1 order
+
+
+## Task 3:
