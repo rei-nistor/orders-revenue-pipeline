@@ -84,12 +84,12 @@ def eligible_orders(flagged: DataFrame) -> DataFrame:
 
 
 def daily_revenue(orders: DataFrame) -> DataFrame:
-    """Calculate daily completed-order revenue."""
+    """Calculate daily completed order revenue."""
     return (
         orders.groupBy("order_date")
         .agg(
-            F.round(F.sum("amount"), 2).alias("revenue"),
+            F.sum("amount").cast(MONEY).alias("revenue"),
             F.count("order_id").alias("order_count"),
         )
         .orderBy("order_date")
-    )
+     
