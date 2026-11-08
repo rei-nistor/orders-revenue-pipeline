@@ -33,7 +33,8 @@ DQ_RULES = (
 ORDER_DETAILS = ("customer_id", "order_date", "amount", "status")
 
 
-# replaced original prepare_orders function because it was trying to do 3 things at once: type casting, date conversion, and deduplication
+# replaced original prepare_orders function because it was trying to do 3 things at once:
+# type casting, date conversion, and deduplication
 
 
 def empty_to_null(name: str) -> Column:
